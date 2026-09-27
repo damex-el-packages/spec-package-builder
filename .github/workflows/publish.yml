@@ -1,0 +1,73 @@
+---
+name: publish
+on:  # yamllint disable-line rule:truthy
+  workflow_call:
+    inputs:
+      docker_image_name:
+        required: true
+        type: string
+      docker_image_tag:
+        required: true
+        type: string
+      runner_image:
+        required: true
+        type: string
+      architecture:
+        required: true
+        type: string
+      gpg_public_key:
+        required: true
+        type: string
+      gpg_public_keyring:
+        required: true
+        type: string
+    secrets:
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: true
+      YUM_REPOSITORIES_ACCESS_KEY:
+        required: true
+      YUM_REPOSITORIES_SECRET_KEY:
+        required: true
+      YUM_REPOSITORIES_S3_ENDPOINT:
+        required: true
+      YUM_REPOSITORIES_BUCKET_NAME:
+        required: true
+
+jobs:
+  publish:
+    concurrency: publish-${{ github.repository }}-${{ inputs.docker_image_tag }}-${{ inputs.architecture }}
+    runs-on: ${{ inputs.runner_image }}
+    container: ${{ inputs.docker_image_name }}:${{ inputs.docker_image_tag }}
+    env:
+      DIRECTORY: RPMS/el/${{ inputs.docker_image_tag }}/${{ inputs.architecture }}
+      GPG_PUBLIC_KEY: ${{ inputs.gpg_public_key }}
+      GPG_PUBLIC_KEYRING: ${{ inputs.gpg_public_keyring }}
+    steps:
+      - run: dnf --assumeyes install git epel-release
+      - run: dnf --assumeyes install createrepo s3cmd gnupg
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: rpms-*-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
+          merge-multiple: true
+          path: RPMS/el/${{ inputs.docker_image_tag }}
+      - run: |
+          find "${DIRECTORY}" -name '*.rpm' | grep --quiet .
+          createrepo --verbose "${DIRECTORY}"
+      - env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          printf '%s' "${GPG_PRIVATE_KEY}" | base64 --decode | gpg --batch --yes --import
+          gpg --batch --yes --passphrase "${GPG_PASSPHRASE}" --pinentry-mode loopback --detach-sign --armor "${DIRECTORY}/repodata/repomd.xml"
+      - run: |
+          gpgv --keyring "./${GPG_PUBLIC_KEYRING}" "${DIRECTORY}/repodata/repomd.xml.asc" "${DIRECTORY}/repodata/repomd.xml"
+          cp "${GPG_PUBLIC_KEY}" "${GPG_PUBLIC_KEYRING}" RPMS
+      - env:
+          YUM_REPOSITORIES_ACCESS_KEY: ${{ secrets.YUM_REPOSITORIES_ACCESS_KEY }}
+          YUM_REPOSITORIES_SECRET_KEY: ${{ secrets.YUM_REPOSITORIES_SECRET_KEY }}
+          YUM_REPOSITORIES_S3_ENDPOINT: ${{ secrets.YUM_REPOSITORIES_S3_ENDPOINT }}
+          YUM_REPOSITORIES_BUCKET_NAME: ${{ secrets.YUM_REPOSITORIES_BUCKET_NAME }}
+        run: s3cmd sync --host="${YUM_REPOSITORIES_S3_ENDPOINT}" --host-bucket="%(bucket)s.${YUM_REPOSITORIES_S3_ENDPOINT}" --access_key="${YUM_REPOSITORIES_ACCESS_KEY}" --secret_key="${YUM_REPOSITORIES_SECRET_KEY}" --acl-public --verbose RPMS/ "s3://${YUM_REPOSITORIES_BUCKET_NAME}/${GITHUB_REPOSITORY#*/}/"

@@ -1,0 +1,93 @@
+---
+name: pipeline
+on:  # yamllint disable-line rule:truthy
+  workflow_call:
+    inputs:
+      gpg_key_id:
+        required: true
+        type: string
+      gpg_public_key:
+        required: true
+        type: string
+      gpg_public_keyring:
+        required: true
+        type: string
+      publish:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution:
+          - codename: el9
+            docker_image_name: ghcr.io/almalinux/9-base
+            docker_image_tag: "9"
+          - codename: el10
+            docker_image_name: ghcr.io/almalinux/10-base
+            docker_image_tag: "10"
+    uses: ./.github/workflows/lint.yml
+    with:
+      codename: ${{ matrix.distribution.codename }}
+      docker_image_name: ${{ matrix.distribution.docker_image_name }}
+      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
+
+  build:
+    needs:
+      - lint
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution:
+          - codename: el9
+            docker_image_name: ghcr.io/almalinux/9-base
+            docker_image_tag: "9"
+          - codename: el10
+            docker_image_name: ghcr.io/almalinux/10-base
+            docker_image_tag: "10"
+        runner_image:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    uses: ./.github/workflows/build.yml
+    with:
+      codename: ${{ matrix.distribution.codename }}
+      docker_image_name: ${{ matrix.distribution.docker_image_name }}
+      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
+      runner_image: ${{ matrix.runner_image }}
+      gpg_key_id: ${{ inputs.gpg_key_id }}
+      gpg_public_key: ${{ inputs.gpg_public_key }}
+      sign: ${{ inputs.publish }}
+    secrets: inherit
+
+  publish:
+    if: inputs.publish
+    needs:
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution:
+          - docker_image_name: ghcr.io/almalinux/9-base
+            docker_image_tag: "9"
+          - docker_image_name: ghcr.io/almalinux/10-base
+            docker_image_tag: "10"
+        platform:
+          - runner_image: ubuntu-24.04
+            architecture: x86_64
+          - runner_image: ubuntu-24.04-arm
+            architecture: aarch64
+    uses: ./.github/workflows/publish.yml
+    with:
+      docker_image_name: ${{ matrix.distribution.docker_image_name }}
+      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
+      runner_image: ${{ matrix.platform.runner_image }}
+      architecture: ${{ matrix.platform.architecture }}
+      gpg_public_key: ${{ inputs.gpg_public_key }}
+      gpg_public_keyring: ${{ inputs.gpg_public_keyring }}
+    secrets: inherit

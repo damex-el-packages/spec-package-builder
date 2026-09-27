@@ -15,6 +15,12 @@ on:  # yamllint disable-line rule:truthy
       runner_image:
         required: true
         type: string
+      gpg_key_id:
+        required: true
+        type: string
+      gpg_public_key:
+        required: true
+        type: string
       sign:
         required: false
         type: boolean
@@ -25,6 +31,9 @@ on:  # yamllint disable-line rule:truthy
       GPG_PASSPHRASE:
         required: false
 
+env:
+  YUM_REPOSITORIES_URL: https://yum-repositories.damex.org
+
 jobs:
   list_spec_files:
     runs-on: ubuntu-24.04
@@ -33,40 +42,56 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: list_spec_files
+        env:
+          CODENAME: ${{ inputs.codename }}
         run: |
-          spec_files=$(find SPECS/${{ inputs.codename }} -type l -name '*.spec' -printf '%f\n' | jq -R . | jq -c -s .)
-          echo "spec_files=$spec_files" >> $GITHUB_OUTPUT
+          spec_files=$(find "SPECS/${CODENAME}" -type l -name '*.spec' -printf '%f\n' | jq --raw-input . | jq --compact-output --slurp .)
+          echo "spec_files=${spec_files}" >> "${GITHUB_OUTPUT}"
 
   build:
     needs:
       - list_spec_files
     strategy:
+      fail-fast: false
       matrix:
         spec_file: ${{ fromJson(needs.list_spec_files.outputs.spec_files) }}
     runs-on: ${{ inputs.runner_image }}
+    container: ${{ inputs.docker_image_name }}:${{ inputs.docker_image_tag }}
+    env:
+      SPEC_FILE: SPECS/${{ matrix.spec_file }}
+      GPG_KEY_ID: ${{ inputs.gpg_key_id }}
+      GPG_PUBLIC_KEY: ${{ inputs.gpg_public_key }}
     steps:
+      - run: dnf --assumeyes upgrade
+      - run: dnf --assumeyes install git epel-release dnf-utils rpmdevtools rpm-build
+      - run: dnf config-manager --set-enabled crb
+      - run: rpm --eval '%{?el9:nodejs:22}' | xargs --no-run-if-empty dnf module enable --assumeyes
       - uses: actions/checkout@v5
-      - if: ${{ !inputs.sign }}
-        run: sudo make SPEC_FILE=SPECS/${{ matrix.spec_file }} DOCKER_IMAGE_NAME=${{ inputs.docker_image_name }} DOCKER_IMAGE_TAG=${{ inputs.docker_image_tag }} build_in_docker
-      - if: ${{ inputs.sign }}
-        run: sudo make SPEC_FILE=SPECS/${{ matrix.spec_file }} DOCKER_IMAGE_NAME=${{ inputs.docker_image_name }} DOCKER_IMAGE_TAG=${{ inputs.docker_image_tag }} GPG_PRIVATE_KEY="${{ secrets.GPG_PRIVATE_KEY }}" GPG_PASSPHRASE=${{ secrets.GPG_PASSPHRASE }} build_and_sign_in_docker
-      - if: ${{ inputs.sign }}
+      - run: |
+          name="${GITHUB_REPOSITORY#*/}"
+          release=$(rpm --eval '%{rhel}')
+          architecture=$(rpm --eval '%{_arch}')
+          printf '[damex-%s]\nname=damex-%s\nbaseurl=%s/%s/el/%s/%s\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=file://%s/%s\n' "${name}" "${name}" "${YUM_REPOSITORIES_URL}" "${name}" "${release}" "${architecture}" "${PWD}" "${GPG_PUBLIC_KEY}" > "/etc/yum.repos.d/damex-${name}.repo"
+      - run: spectool --get-files --directory "${PWD}/SOURCES" "${SPEC_FILE}"
+      - run: yum-builddep --assumeyes "${SPEC_FILE}"
+      - run: rpmbuild -bb --define "_topdir ${PWD}" "${SPEC_FILE}"
+      - if: inputs.sign
+        run: dnf --assumeyes install gnupg rpm-sign
+      - if: inputs.sign
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          printf '%s' "${GPG_PRIVATE_KEY}" | base64 --decode | gpg --batch --yes --import
+          echo unlock | gpg --batch --yes --passphrase "${GPG_PASSPHRASE}" --pinentry-mode loopback --sign --output /dev/null
+          find RPMS -name '*.rpm' -exec rpmsign --key-id="${GPG_KEY_ID}" --addsign {} +
+      - if: inputs.sign
+        run: |
+          rpmkeys --import "${GPG_PUBLIC_KEY}"
+          find RPMS -name '*.rpm' -exec rpmkeys --checksig {} +
+      - if: inputs.sign
         uses: actions/upload-artifact@v5
         with:
-          name: kubernetes-rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
-          path: RPMS/kubernetes
-      - if: ${{ inputs.sign }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: prometheus-rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
-          path: RPMS/prometheus
-      - if: ${{ inputs.sign }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: incus-rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
-          path: RPMS/incus
-      - if: ${{ inputs.sign }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: zfs-rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
-          path: RPMS/zfs
+          name: rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
+          path: RPMS
+          if-no-files-found: error

@@ -21,17 +21,25 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: list_spec_files
+        env:
+          CODENAME: ${{ inputs.codename }}
         run: |
-          spec_files=$(find SPECS/${{ inputs.codename }} -type l -name '*.spec' -printf '%f\n' | jq -R . | jq -c -s .)
-          echo "spec_files=$spec_files" >> $GITHUB_OUTPUT
+          spec_files=$(find "SPECS/${CODENAME}" -type l -name '*.spec' -printf '%f\n' | jq --raw-input . | jq --compact-output --slurp .)
+          echo "spec_files=${spec_files}" >> "${GITHUB_OUTPUT}"
 
   lint:
     needs:
       - list_spec_files
     strategy:
+      fail-fast: false
       matrix:
         spec_file: ${{ fromJson(needs.list_spec_files.outputs.spec_files) }}
     runs-on: ubuntu-24.04
+    container: ${{ inputs.docker_image_name }}:${{ inputs.docker_image_tag }}
+    env:
+      SPEC_FILE: SPECS/${{ matrix.spec_file }}
     steps:
+      - run: dnf --assumeyes install git epel-release
+      - run: dnf --assumeyes install rpmlint
       - uses: actions/checkout@v5
-      - run: sudo make SPEC_FILE=SPECS/${{ matrix.spec_file }} DOCKER_IMAGE_NAME=${{ inputs.docker_image_name }} DOCKER_IMAGE_TAG=${{ inputs.docker_image_tag }} lint_in_docker
+      - run: rpmlint "${SPEC_FILE}"
