@@ -12,6 +12,10 @@ on:  # yamllint disable-line rule:truthy
       gpg_public_keyring:
         required: true
         type: string
+      build_with_published_repository:
+        required: false
+        type: boolean
+        default: false
       publish:
         required: false
         type: boolean
@@ -62,6 +66,7 @@ jobs:
       runner_image: ${{ matrix.runner_image }}
       gpg_key_id: ${{ inputs.gpg_key_id }}
       gpg_public_key: ${{ inputs.gpg_public_key }}
+      build_with_published_repository: ${{ inputs.build_with_published_repository }}
       sign: ${{ inputs.publish }}
     secrets: inherit
 

@@ -21,6 +21,10 @@ on:  # yamllint disable-line rule:truthy
       gpg_public_key:
         required: true
         type: string
+      build_with_published_repository:
+        required: false
+        type: boolean
+        default: false
       sign:
         required: false
         type: boolean
@@ -67,7 +71,8 @@ jobs:
       - run: dnf config-manager --set-enabled crb
       - run: rpm --eval '%{?el9:nodejs:22}' | xargs --no-run-if-empty dnf module enable --assumeyes
       - uses: actions/checkout@v5
-      - run: |
+      - if: inputs.build_with_published_repository
+        run: |
           name="${GITHUB_REPOSITORY#*/}"
           release=$(rpm --eval '%{rhel}')
           architecture=$(rpm --eval '%{_arch}')
