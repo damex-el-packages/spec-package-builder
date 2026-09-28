@@ -2,247 +2,93 @@
 
 ## Description
 
-This repository contains spec files for building RPM packages.
+Reusable GitHub workflows for building, signing and publishing RPM packages from spec files.
 
-It includes a `Makefile` that builds packages natively on `Red Hat Enterprise Linux` or its derivatives.
+Package repositories call `pipeline.yml`.
+Pipeline lints spec files.
+Pipeline builds packages for `Red Hat Enterprise Linux 9` and `Red Hat Enterprise Linux 10` on `x86_64` and `aarch64`.
+Pipeline signs packages with repository own gpg key.
+Pipeline publishes signed yum repository to `https://yum-repositories.damex.org/<repository>`.
 
-The `Makefile` accepts `SPEC_FILE` as a mandatory input, allowing you to specify the path to the spec file included in the `SPECS` directory.
+GitHub repository name is yum repository name.
 
-Currently, packages and their corresponding spec files are built and tested only for `Red Hat Enterprise Linux 9`, `Red Hat Enterprise Linux 10` and its derivatives like `Alma Linux 9`, `Alma Linux 10`, `Rocky Linux 9` and `Rocky Linux 10`.
+[Follow here if you want to build packages](#usage).
 
-[Follow here if you want to build packages yourself](#Usage).
-
-[Follow here if you want to use prebuilt packages](#Using-prebuilt-packages).
+[Follow here if you want to use prebuilt packages](#using-prebuilt-packages).
 
 ## Usage
 
-### Building Packages
+### Package repository layout
 
-To build packages natively on your system, run the following command:
-
-```sh
-make SPEC_FILE=SPECS/my.spec build
+```
+<repository>
++-- .github/workflows/pipeline.yml
++-- SPECS/<package>.spec
++-- SPECS/el9/<package>.spec -> ../<package>.spec
++-- SPECS/el10/<package>.spec -> ../<package>.spec
++-- <repository>-<expiry>.asc
++-- <repository>-<expiry>.gpg
 ```
 
-### Linting Spec Files
+Symlink in `SPECS/el9` or `SPECS/el10` enables package build for that distribution.
 
-To lint spec files natively on your system, run the following command:
+Spec file without symlink is not built and can be pulled into other spec files with `%include`.
 
-```sh
-make SPEC_FILE=SPECS/my.spec lint
+### Calling pipeline
+
+```yaml
+---
+name: pipeline
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - "**"
+  schedule:
+    - cron: 0 0 * * 0
+
+jobs:
+  pipeline:
+    uses: damex-el-packages/spec-package-builder/.github/workflows/pipeline.yml@production
+    with:
+      gpg_key_id: 33261F4E1EF30BC3
+      gpg_public_key: incus-2036-09-25.asc
+      gpg_public_keyring: incus-2036-09-25.gpg
+      publish: ${{ github.ref == 'refs/heads/production' }}
+    secrets: inherit
 ```
 
-### Building Packages Inside Docker
+Push to any branch lints and builds.
+Push to `production` also signs and publishes.
+Weekly schedule runs on default branch, publishes when default branch is `production`.
 
-To build packages inside a Docker container, run the following command:
+### Inputs
 
-```sh
-make SPEC_FILE=SPECS/my.spec build_in_docker
-```
+| Input                           | Required | Description                                                          |
+|---------------------------------|----------|----------------------------------------------------------------------|
+| gpg_key_id                      | yes      | Signing key id, must match `GPG_PRIVATE_KEY`                         |
+| gpg_public_key                  | yes      | Armored public key file in repository root                           |
+| gpg_public_keyring              | yes      | Binary public key file in repository root                            |
+| build_with_published_repository | no       | Resolve build dependencies from own published yum repository. Repository must be published before first such build. |
+| publish                         | no       | Sign packages and publish yum repository                             |
 
-### Linting Spec Files Inside Docker
+### Secrets
 
-To lint spec files inside a Docker container, run the following command:
-
-```sh
-make SPEC_FILE=SPECS/my.spec lint_in_docker
-```
-
-### Building Packages Inside Podman
-
-To build packages inside a Podman container, run the following command:
-
-```sh
-make SPEC_FILE=SPECS/my.spec build_in_podman
-```
-
-### Linting Spec Files Inside Podman
-
-To lint spec files inside a Podman container, run the following command:
-
-```sh
-make SPEC_FILE=SPECS/my.spec lint_in_podman
-```
+| Secret                       | Scope        | Description                              |
+|------------------------------|--------------|------------------------------------------|
+| GPG_PRIVATE_KEY              | repository   | Base64 of exported gpg secret key        |
+| GPG_PASSPHRASE               | repository   | Passphrase of gpg secret key             |
+| YUM_REPOSITORIES_ACCESS_KEY  | organization | S3 access key                            |
+| YUM_REPOSITORIES_SECRET_KEY  | organization | S3 secret key                            |
+| YUM_REPOSITORIES_S3_ENDPOINT | organization | S3 endpoint host without scheme          |
+| YUM_REPOSITORIES_BUCKET_NAME | organization | S3 bucket name                           |
 
 ## Using prebuilt packages
 
-### Add damex-kubernetes repository with prebuilt packages
+Each repository describes how to add its yum repository and lists its packages.
 
-To add `damex-kubernetes` repository to `Red Hat Enterprise Linux 9` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/kubernetes/el/9/x86_64/damex-kubernetes-release-0.2.0-1.el9.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/kubernetes/el/9/aarch64/damex-kubernetes-release-0.2.0-1.el9.aarch64.rpm
-```
-
-To add `damex-kubernetes` repository to `Red Hat Enterprise Linux 10` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/kubernetes/el/10/x86_64/damex-kubernetes-release-0.2.0-1.el10.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/kubernetes/el/10/aarch64/damex-kubernetes-release-0.2.0-1.el10.aarch64.rpm
-```
-
-Alternatively, it can be done manually by adding the following configuration to `/etc/yum.repos.d/damex-kubernetes.repo`:
-
-```sh
-[damex-kubernetes]
-name = damex-kubernetes
-baseurl = https://yum-repositories.damex.org/kubernetes/el/$releasever/$basearch
-gpgcheck = 1
-gpgkey = https://yum-repositories.damex.org/kubernetes/yum-repositories-2035-11-30.asc
-```
-
-### Add damex-prometheus repository with prebuilt packages
-
-To add `damex-prometheus` repository to `Red Hat Enterprise Linux 9` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/prometheus/el/9/x86_64/damex-prometheus-release-0.2.0-1.el9.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/prometheus/el/9/aarch64/damex-prometheus-release-0.2.0-1.el9.aarch64.rpm
-```
-
-To add `damex-prometheus` repository to `Red Hat Enterprise Linux 10` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/prometheus/el/10/x86_64/damex-prometheus-release-0.2.0-1.el10.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/prometheus/el/10/aarch64/damex-prometheus-release-0.2.0-1.el10.aarch64.rpm
-```
-
-Alternatively, it can be done manually by adding the following configuration to `/etc/yum.repos.d/damex-prometheus.repo`:
-
-```sh
-[damex-prometheus]
-name = damex-prometheus
-baseurl = https://yum-repositories.damex.org/prometheus/el/$releasever/$basearch
-gpgcheck = 1
-gpgkey = https://yum-repositories.damex.org/prometheus/yum-repositories-2035-11-30.asc
-```
-
-### Add damex-incus repository with prebuilt packages
-
-To add `damex-incus` repository to `Red Hat Enterprise Linux 9` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/incus/el/9/x86_64/damex-incus-release-0.1.1-1.el9.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/incus/el/9/aarch64/damex-incus-release-0.1.1-1.el9.aarch64.rpm
-```
-
-To add `damex-incus` repository to `Red Hat Enterprise Linux 10` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/incus/el/10/x86_64/damex-incus-release-0.1.1-1.el10.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/incus/el/10/aarch64/damex-incus-release-0.1.1-1.el10.aarch64.rpm
-```
-
-Alternatively, it can be done manually by adding the following configuration to `/etc/yum.repos.d/damex-incus.repo`:
-
-```sh
-[damex-incus]
-name = damex-incus
-baseurl = https://yum-repositories.damex.org/incus/el/$releasever/$basearch
-gpgcheck = 1
-gpgkey = https://yum-repositories.damex.org/incus/yum-repositories-2035-11-30.asc
-```
-
-### Add damex-zfs repository with prebuilt packages
-
-To add `damex-zfs` repository to `Red Hat Enterprise Linux 9` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/zfs/el/9/x86_64/damex-zfs-release-0.1.0-1.el9.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/zfs/el/9/aarch64/damex-zfs-release-0.1.0-1.el9.aarch64.rpm
-```
-
-To add `damex-zfs` repository to `Red Hat Enterprise Linux 10` install the following package:
-
-```sh
-# x86_64
-https://yum-repositories.damex.org/zfs/el/10/x86_64/damex-zfs-release-0.1.0-1.el10.x86_64.rpm
-# aarch64
-https://yum-repositories.damex.org/zfs/el/10/aarch64/damex-zfs-release-0.1.0-1.el10.aarch64.rpm
-```
-
-Alternatively, it can be done manually by adding the following configuration to `/etc/yum.repos.d/damex-zfs.repo`:
-
-```sh
-[damex-zfs]
-name = damex-zfs
-baseurl = https://yum-repositories.damex.org/zfs/el/$releasever/$basearch
-gpgcheck = 1
-gpgkey = https://yum-repositories.damex.org/zfs/yum-repositories-2035-11-30.asc
-```
-
-### List of prebuilt packages
-
-| Package              | Repository | Architecture | Distributives              |
-|----------------------|------------|--------------|----------------------------|
-| cni-plugins          | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| cni-plugins-ipam     | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| cni-plugins-main     | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| cni-plugins-meta     | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd                 | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-benchmark       | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-dump-db         | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-dump-logs       | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-dump-metrics    | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-etcdctl         | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| etcd-etcdutl         | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| flannel              | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| helm                 | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kube-apiserver       | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kube-controller-manager | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kube-proxy           | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kube-router          | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kube-scheduler       | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kubectl              | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kubectl-convert      | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kubelet              | damex-kubernetes | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| alertmanager         | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| alertmanager-amtool  | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| blackbox-exporter    | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| jmx-exporter         | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| jmx-exporter-agent   | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| kafka-exporter       | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| memcached-exporter   | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| karma                | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 10 |
-| node-exporter        | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| postgresql-exporter  | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| prometheus           | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| prometheus-promtool  | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| redis-exporter       | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| rsyslog-exporter     | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| smartctl-exporter    | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| systemd-exporter     | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| unbound-exporter     | damex-prometheus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| cowsql               | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| cowsql-devel         | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| incus                | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| incus-agent          | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| incus-client         | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| incus-tools          | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| lxc                  | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| lxc-devel            | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| lxc-libs             | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| lxcfs                | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| raft                 | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| raft-devel           | damex-incus | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs                  | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs-devel            | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs-dkms             | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs-dracut           | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs-libs             | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
-| zfs-pam              | damex-zfs | x86_64, aarch64 | Red Hat Enterprise Linux 9, Red Hat Enterprise Linux 10 |
+| Repository       | Source                                                                          |
+|------------------|---------------------------------------------------------------------------------|
+| damex-incus      | [damex-el-packages/incus](https://github.com/damex-el-packages/incus)           |
+| damex-kubernetes | [damex-el-packages/kubernetes](https://github.com/damex-el-packages/kubernetes) |
+| damex-prometheus | [damex-el-packages/prometheus](https://github.com/damex-el-packages/prometheus) |
+| damex-zfs        | [damex-el-packages/zfs](https://github.com/damex-el-packages/zfs)               |
