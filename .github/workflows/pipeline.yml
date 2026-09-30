@@ -16,6 +16,14 @@ on:  # yamllint disable-line rule:truthy
         required: false
         type: boolean
         default: false
+      distributions:
+        required: false
+        type: string
+        default: |
+          [
+            {"codename": "el9", "docker_image_name": "ghcr.io/almalinux/9-base", "docker_image_tag": "9"},
+            {"codename": "el10", "docker_image_name": "ghcr.io/almalinux/10-base", "docker_image_tag": "10"}
+          ]
       publish:
         required: false
         type: boolean
@@ -29,13 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution:
-          - codename: el9
-            docker_image_name: ghcr.io/almalinux/9-base
-            docker_image_tag: "9"
-          - codename: el10
-            docker_image_name: ghcr.io/almalinux/10-base
-            docker_image_tag: "10"
+        distribution: ${{ fromJson(inputs.distributions) }}
     uses: ./.github/workflows/lint.yml
     with:
       codename: ${{ matrix.distribution.codename }}
@@ -48,13 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution:
-          - codename: el9
-            docker_image_name: ghcr.io/almalinux/9-base
-            docker_image_tag: "9"
-          - codename: el10
-            docker_image_name: ghcr.io/almalinux/10-base
-            docker_image_tag: "10"
+        distribution: ${{ fromJson(inputs.distributions) }}
         runner_image:
           - ubuntu-24.04
           - ubuntu-24.04-arm
@@ -77,11 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution:
-          - docker_image_name: ghcr.io/almalinux/9-base
-            docker_image_tag: "9"
-          - docker_image_name: ghcr.io/almalinux/10-base
-            docker_image_tag: "10"
+        distribution: ${{ fromJson(inputs.distributions) }}
         platform:
           - runner_image: ubuntu-24.04
             architecture: x86_64
