@@ -16,13 +16,15 @@ on:  # yamllint disable-line rule:truthy
         required: false
         type: boolean
         default: false
-      distributions:
+      targets:
         required: false
         type: string
         default: |
           [
-            {"codename": "el9", "docker_image_name": "ghcr.io/almalinux/9-base", "docker_image_tag": "9"},
-            {"codename": "el10", "docker_image_name": "ghcr.io/almalinux/10-base", "docker_image_tag": "10"}
+            {"codename": "el9", "docker_image_name": "ghcr.io/almalinux/9-base", "docker_image_tag": "9", "runner_image": "ubuntu-24.04", "architecture": "x86_64"},
+            {"codename": "el9", "docker_image_name": "ghcr.io/almalinux/9-base", "docker_image_tag": "9", "runner_image": "ubuntu-24.04-arm", "architecture": "aarch64"},
+            {"codename": "el10", "docker_image_name": "ghcr.io/almalinux/10-base", "docker_image_tag": "10", "runner_image": "ubuntu-24.04", "architecture": "x86_64"},
+            {"codename": "el10", "docker_image_name": "ghcr.io/almalinux/10-base", "docker_image_tag": "10", "runner_image": "ubuntu-24.04-arm", "architecture": "aarch64"}
           ]
       publish:
         required: false
@@ -37,12 +39,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution: ${{ fromJson(inputs.distributions) }}
+        target: ${{ fromJson(inputs.targets) }}
     uses: ./.github/workflows/lint.yml
     with:
-      codename: ${{ matrix.distribution.codename }}
-      docker_image_name: ${{ matrix.distribution.docker_image_name }}
-      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
+      codename: ${{ matrix.target.codename }}
+      docker_image_name: ${{ matrix.target.docker_image_name }}
+      docker_image_tag: ${{ matrix.target.docker_image_tag }}
+      runner_image: ${{ matrix.target.runner_image }}
 
   build:
     needs:
@@ -50,16 +53,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution: ${{ fromJson(inputs.distributions) }}
-        runner_image:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+        target: ${{ fromJson(inputs.targets) }}
     uses: ./.github/workflows/build.yml
     with:
-      codename: ${{ matrix.distribution.codename }}
-      docker_image_name: ${{ matrix.distribution.docker_image_name }}
-      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
-      runner_image: ${{ matrix.runner_image }}
+      codename: ${{ matrix.target.codename }}
+      docker_image_name: ${{ matrix.target.docker_image_name }}
+      docker_image_tag: ${{ matrix.target.docker_image_tag }}
+      runner_image: ${{ matrix.target.runner_image }}
       gpg_key_id: ${{ inputs.gpg_key_id }}
       gpg_public_key: ${{ inputs.gpg_public_key }}
       build_with_published_repository: ${{ inputs.build_with_published_repository }}
@@ -73,18 +73,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distribution: ${{ fromJson(inputs.distributions) }}
-        platform:
-          - runner_image: ubuntu-24.04
-            architecture: x86_64
-          - runner_image: ubuntu-24.04-arm
-            architecture: aarch64
+        target: ${{ fromJson(inputs.targets) }}
     uses: ./.github/workflows/publish.yml
     with:
-      docker_image_name: ${{ matrix.distribution.docker_image_name }}
-      docker_image_tag: ${{ matrix.distribution.docker_image_tag }}
-      runner_image: ${{ matrix.platform.runner_image }}
-      architecture: ${{ matrix.platform.architecture }}
+      docker_image_name: ${{ matrix.target.docker_image_name }}
+      docker_image_tag: ${{ matrix.target.docker_image_tag }}
+      runner_image: ${{ matrix.target.runner_image }}
+      architecture: ${{ matrix.target.architecture }}
       gpg_public_key: ${{ inputs.gpg_public_key }}
       gpg_public_keyring: ${{ inputs.gpg_public_keyring }}
     secrets: inherit

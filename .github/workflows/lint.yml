@@ -12,6 +12,9 @@ on:  # yamllint disable-line rule:truthy
       docker_image_tag:
         required: true
         type: string
+      runner_image:
+        required: true
+        type: string
 
 jobs:
   list_spec_files:
@@ -34,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         spec_file: ${{ fromJson(needs.list_spec_files.outputs.spec_files) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner_image }}
     container: ${{ inputs.docker_image_name }}:${{ inputs.docker_image_tag }}
     env:
       SPEC_FILE: SPECS/${{ matrix.spec_file }}
