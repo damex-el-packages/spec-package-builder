@@ -79,7 +79,7 @@ jobs:
           printf '[damex-%s]\nname=damex-%s\nbaseurl=%s/%s/el/%s/%s\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=file://%s/%s\n' "${name}" "${name}" "${YUM_REPOSITORIES_URL}" "${name}" "${release}" "${architecture}" "${PWD}" "${GPG_PUBLIC_KEY}" > "/etc/yum.repos.d/damex-${name}.repo"
       - run: spectool --get-files --directory "${PWD}/SOURCES" "${SPEC_FILE}"
       - run: yum-builddep --assumeyes "${SPEC_FILE}"
-      - run: rpmbuild -bb --define "_topdir ${PWD}" "${SPEC_FILE}"
+      - run: rpmbuild -bb --define "_topdir ${PWD}" --define "_build_name_fmt %{_arch}/%%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" "${SPEC_FILE}"
       - if: inputs.sign
         run: dnf --assumeyes install gnupg rpm-sign
       - if: inputs.sign
