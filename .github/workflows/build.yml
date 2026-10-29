@@ -95,7 +95,7 @@ jobs:
           rpmkeys --import "${GPG_PUBLIC_KEY}"
           find RPMS -name '*.rpm' -exec rpmkeys --checksig {} +
       - if: inputs.sign
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: rpms-${{ matrix.spec_file }}-${{ inputs.docker_image_tag }}-${{ inputs.runner_image }}
           path: RPMS
